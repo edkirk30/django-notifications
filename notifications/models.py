@@ -177,6 +177,10 @@ class Notification(models.Model):
     verb = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
 
+    show_full_screen = models.BooleanField(default=False, blank=True)
+    full_screen_datetime = models.DateTimeField(blank=True, null=True)
+    full_screen_data = models.TextField(blank=True, null=True)
+
     target_content_type = models.ForeignKey(ContentType, related_name='notify_target', blank=True, null=True)
     target_object_id = models.CharField(max_length=255, blank=True, null=True)
     target = GenericForeignKey('target_content_type', 'target_object_id')
@@ -262,6 +266,10 @@ def notify_handler(verb, **kwargs):
     ]
     public = bool(kwargs.pop('public', True))
     description = kwargs.pop('description', None)
+    show_full_screen = kwargs.pop('show_full_screen', False)
+    full_screen_data = kwargs.pop('full_screen_data', None)
+    full_screen_datetime = kwargs.pop('full_screen_datetime', None)
+
     timestamp = kwargs.pop('timestamp', timezone.now())
     level = kwargs.pop('level', Notification.LEVELS.info)
 
@@ -283,6 +291,9 @@ def notify_handler(verb, **kwargs):
             verb=text_type(verb),
             public=public,
             description=description,
+            show_full_screen=show_full_screen,
+            full_screen_data=full_screen_data,
+            full_screen_datetime=full_screen_datetime,
             timestamp=timestamp,
             level=level,
         )
