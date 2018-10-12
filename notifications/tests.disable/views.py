@@ -1,9 +1,13 @@
-from django.shortcuts import render
-
-from notifications import notify
+''' Django notifications views for tests '''
+# -*- coding: utf-8 -*-
 import random
 
+from django.contrib.auth.decorators import login_required
+from django.shortcuts import render
+from notifications.signals import notify
 
+
+@login_required
 def live_tester(request):
     notify.send(sender=request.user, recipient=request.user, verb='you loaded the page')
 

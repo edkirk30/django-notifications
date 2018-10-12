@@ -1,6 +1,10 @@
+''' Django notification settings for tests '''
+# -*- coding: utf-8 -*-
 import os
+
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-SECRET_KEY = 'secret_key'
+SECRET_KEY = 'secret_key' #  noqa
 
 DEBUG = True
 TESTING = True
@@ -12,11 +16,14 @@ DATABASES = {
     }
 }
 
-
+# Django < 2.0
 MIDDLEWARE_CLASSES = (
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
 )
+
+# Django >= 2.0
+MIDDLEWARE = MIDDLEWARE_CLASSES
 
 INSTALLED_APPS = (
     'django.contrib.admin',
@@ -51,14 +58,11 @@ TEMPLATES = [
     },
 ]
 
+LOGIN_REDIRECT_URL = 'test/'
+LOGIN_URL = '/admin/login/'
+APPEND_SLASH = True
 
-# Need to skip migrations for now as migrations created with python2 break with python3
-# See https://code.djangoproject.com/ticket/23455
-class DisableMigrations(object):
-    def __contains__(self, item):
-        return True
-
-    def __getitem__(self, item):
-        return "notmigrations"
-
-MIGRATION_MODULES = DisableMigrations()
+DJANGO_NOTIFICATIONS_CONFIG = {
+    'USE_JSONFIELD': True,
+}
+USE_TZ = True

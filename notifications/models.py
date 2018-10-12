@@ -1,46 +1,46 @@
-from django.conf import settings
-from django.contrib.contenttypes.models import ContentType
+''' Django notifications models file '''
+# -*- coding: utf-8 -*-
+# pylint: disable=too-many-lines
+from distutils.version import StrictVersion  # pylint: disable=no-name-in-module,import-error
+
 from django import get_version
-from django.utils import timezone
-
-from distutils.version import StrictVersion
-
-if StrictVersion(get_version()) >= StrictVersion('1.8.0'):
-    from django.contrib.contenttypes.fields import GenericForeignKey
-else:
-    from django.contrib.contenttypes.generic import GenericForeignKey
-
+from django.conf import settings
+from django.contrib.auth.models import Group
+from django.contrib.contenttypes.models import ContentType
+from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 from django.db.models.query import QuerySet
-from django.core.exceptions import ImproperlyConfigured
+from django.utils import timezone
 from django.utils.six import text_type
-from .utils import id2slug
-
-from .signals import notify
-
-from model_utils import Choices
 from jsonfield.fields import JSONField
+from model_utils import Choices
+from notifications import settings as notifications_settings
+from notifications.signals import notify
+from notifications.utils import id2slug
 
-from django.contrib.auth.models import Group
+if StrictVersion(get_version()) >= StrictVersion('1.8.0'):
+    from django.contrib.contenttypes.fields import GenericForeignKey  # noqa
+else:
+    from django.contrib.contenttypes.generic import GenericForeignKey  # noqa
 
 
-# SOFT_DELETE = getattr(settings, 'NOTIFICATIONS_SOFT_DELETE', False)
+EXTRA_DATA = notifications_settings.get_config()['USE_JSONFIELD']
+
+
 def is_soft_delete():
-    # TODO: SOFT_DELETE = getattr(settings, ...) doesn't work with "override_settings" decorator in unittest
-    #     But is_soft_delete is neither a very elegant way. Should try to find better approach
-    return getattr(settings, 'NOTIFICATIONS_SOFT_DELETE', False)
+    return notifications_settings.get_config()['SOFT_DELETE']
 
 
 def assert_soft_delete():
     if not is_soft_delete():
-        msg = """To use 'deleted' field, please set 'NOTIFICATIONS_SOFT_DELETE'=True in settings.
+        msg = """To use 'deleted' field, please set 'SOFT_DELETE'=True in settings.
         Otherwise NotificationQuerySet.unread and NotificationQuerySet.read do NOT filter by 'deleted' field.
         """
         raise ImproperlyConfigured(msg)
 
 
 class NotificationQuerySet(models.query.QuerySet):
-
+    ''' Notification QuerySet '''
     def unsent(self):
         return self.filter(emailed=False)
 
@@ -51,21 +51,19 @@ class NotificationQuerySet(models.query.QuerySet):
         """Return only unread items in the current queryset"""
         if is_soft_delete() and not include_deleted:
             return self.filter(unread=True, deleted=False)
-        else:
-            """ when SOFT_DELETE=False, developers are supposed NOT to touch 'deleted' field.
-            In this case, to improve query performance, don't filter by 'deleted' field
-            """
-            return self.filter(unread=True)
+
+        # When SOFT_DELETE=False, developers are supposed NOT to touch 'deleted' field.
+        # In this case, to improve query performance, don't filter by 'deleted' field
+        return self.filter(unread=True)
 
     def read(self, include_deleted=False):
         """Return only read items in the current queryset"""
         if is_soft_delete() and not include_deleted:
             return self.filter(unread=False, deleted=False)
-        else:
-            """ when SOFT_DELETE=False, developers are supposed NOT to touch 'deleted' field.
-            In this case, to improve query performance, don't filter by 'deleted' field
-            """
-            return self.filter(unread=False)
+
+        # When SOFT_DELETE=False, developers are supposed NOT to touch 'deleted' field.
+        # In this case, to improve query performance, don't filter by 'deleted' field
+        return self.filter(unread=False)
 
     def mark_all_as_read(self, recipient=None):
         """Mark as read any unread messages in the current queryset.
@@ -74,23 +72,23 @@ class NotificationQuerySet(models.query.QuerySet):
         """
         # We want to filter out read ones, as later we will store
         # the time they were marked as read.
-        qs = self.unread(True)
+        qset = self.unread(True)
         if recipient:
-            qs = qs.filter(recipient=recipient)
+            qset = qset.filter(recipient=recipient)
 
-        return qs.update(unread=False)
+        return qset.update(unread=False)
 
     def mark_all_as_unread(self, recipient=None):
         """Mark as unread any read messages in the current queryset.
 
         Optionally, filter these by recipient first.
         """
-        qs = self.read(True)
+        qset = self.read(True)
 
         if recipient:
-            qs = qs.filter(recipient=recipient)
+            qset = qset.filter(recipient=recipient)
 
-        return qs.update(unread=True)
+        return qset.update(unread=True)
 
     def deleted(self):
         """Return only deleted items in the current queryset"""
@@ -107,32 +105,34 @@ class NotificationQuerySet(models.query.QuerySet):
         Optionally, filter by recipient first.
         """
         assert_soft_delete()
-        qs = self.active()
+        qset = self.active()
         if recipient:
-            qs = qs.filter(recipient=recipient)
+            qset = qset.filter(recipient=recipient)
 
-        return qs.update(deleted=True)
+        return qset.update(deleted=True)
 
     def mark_all_as_active(self, recipient=None):
         """Mark current queryset as active(un-deleted).
         Optionally, filter by recipient first.
         """
         assert_soft_delete()
-        qs = self.deleted()
+        qset = self.deleted()
         if recipient:
-            qs = qs.filter(recipient=recipient)
+            qset = qset.filter(recipient=recipient)
 
-        return qs.update(deleted=False)
+        return qset.update(deleted=False)
 
     def mark_as_unsent(self, recipient=None):
+        qset = self.sent()
         if recipient:
-            qs = self.filter(recipient=recipient)
-        return qs.update(emailed=False)
+            qset = qset.filter(recipient=recipient)
+        return qset.update(emailed=False)
 
     def mark_as_sent(self, recipient=None):
+        qset = self.unsent()
         if recipient:
-            qs = self.filter(recipient=recipient)
-        return qs.update(emailed=True)
+            qset = qset.filter(recipient=recipient)
+        return qset.update(emailed=True)
 
 
 class Notification(models.Model):
@@ -161,46 +161,61 @@ class Notification(models.Model):
 
     HTML Representation::
 
-        <a href="http://oebfare.com/">brosner</a> commented on <a href="http://github.com/pinax/pinax">pinax/pinax</a> 2 hours ago
+        <a href="http://oebfare.com/">brosner</a> commented on <a href="http://github.com/pinax/pinax">pinax/pinax</a> 2 hours ago # noqa
 
     """
     LEVELS = Choices('success', 'info', 'warning', 'error')
     level = models.CharField(choices=LEVELS, default=LEVELS.info, max_length=20)
 
-    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, blank=False, related_name='notifications')
-    unread = models.BooleanField(default=True, blank=False)
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        blank=False,
+        related_name='notifications',
+        on_delete=models.CASCADE
+    )
+    unread = models.BooleanField(default=True, blank=False, db_index=True)
 
-    actor_content_type = models.ForeignKey(ContentType, related_name='notify_actor')
+    actor_content_type = models.ForeignKey(ContentType, related_name='notify_actor', on_delete=models.CASCADE)
     actor_object_id = models.CharField(max_length=255)
     actor = GenericForeignKey('actor_content_type', 'actor_object_id')
 
     verb = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
 
+<<<<<<< HEAD
     show_full_screen = models.BooleanField(default=False, blank=True)
     full_screen_datetime = models.DateTimeField(blank=True, null=True)
     full_screen_data = models.TextField(blank=True, null=True)
 
     target_content_type = models.ForeignKey(ContentType, related_name='notify_target', blank=True, null=True)
+=======
+    target_content_type = models.ForeignKey(
+        ContentType,
+        related_name='notify_target',
+        blank=True,
+        null=True,
+        on_delete=models.CASCADE
+    )
+>>>>>>> 8ba5e32ceace668bb7bdbf5e846d115b38b2fd0b
     target_object_id = models.CharField(max_length=255, blank=True, null=True)
     target = GenericForeignKey('target_content_type', 'target_object_id')
 
     action_object_content_type = models.ForeignKey(ContentType, blank=True, null=True,
-                                                   related_name='notify_action_object')
+                                                   related_name='notify_action_object', on_delete=models.CASCADE)
     action_object_object_id = models.CharField(max_length=255, blank=True, null=True)
     action_object = GenericForeignKey('action_object_content_type', 'action_object_object_id')
 
     timestamp = models.DateTimeField(default=timezone.now)
 
-    public = models.BooleanField(default=True)
-    deleted = models.BooleanField(default=False)
-    emailed = models.BooleanField(default=False)
+    public = models.BooleanField(default=True, db_index=True)
+    deleted = models.BooleanField(default=False, db_index=True)
+    emailed = models.BooleanField(default=False, db_index=True)
 
     data = JSONField(blank=True, null=True)
     objects = NotificationQuerySet.as_manager()
 
     class Meta:
-        ordering = ('-timestamp', )
+        ordering = ('-timestamp',)
         app_label = 'notifications'
 
     def __unicode__(self):
@@ -244,12 +259,6 @@ class Notification(models.Model):
             self.unread = True
             self.save()
 
-# 'NOTIFY_USE_JSONFIELD' is for backward compatibility
-# As app name is 'notifications', let's use 'NOTIFICATIONS' consistently from now
-EXTRA_DATA = getattr(settings, 'NOTIFY_USE_JSONFIELD', None)
-if EXTRA_DATA is None:
-    EXTRA_DATA = getattr(settings, 'NOTIFICATIONS_USE_JSONFIELD', False)
-
 
 def notify_handler(verb, **kwargs):
     """
@@ -276,7 +285,7 @@ def notify_handler(verb, **kwargs):
     # Check if User or Group
     if isinstance(recipient, Group):
         recipients = recipient.user_set.all()
-    elif isinstance(recipient, QuerySet) or isinstance(recipient, list):
+    elif isinstance(recipient, (QuerySet, list)):
         recipients = recipient
     else:
         recipients = [recipient]
@@ -305,7 +314,7 @@ def notify_handler(verb, **kwargs):
                 setattr(newnotify, '%s_content_type' % opt,
                         ContentType.objects.get_for_model(obj))
 
-        if len(kwargs) and EXTRA_DATA:
+        if kwargs and EXTRA_DATA:
             newnotify.data = kwargs
 
         newnotify.save()
