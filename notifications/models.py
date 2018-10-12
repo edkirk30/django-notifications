@@ -182,21 +182,12 @@ class Notification(models.Model):
     verb = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
 
-<<<<<<< HEAD
     show_full_screen = models.BooleanField(default=False, blank=True)
     full_screen_datetime = models.DateTimeField(blank=True, null=True)
     full_screen_data = models.TextField(blank=True, null=True)
 
     target_content_type = models.ForeignKey(ContentType, related_name='notify_target', blank=True, null=True)
-=======
-    target_content_type = models.ForeignKey(
-        ContentType,
-        related_name='notify_target',
-        blank=True,
-        null=True,
-        on_delete=models.CASCADE
-    )
->>>>>>> 8ba5e32ceace668bb7bdbf5e846d115b38b2fd0b
+
     target_object_id = models.CharField(max_length=255, blank=True, null=True)
     target = GenericForeignKey('target_content_type', 'target_object_id')
 
